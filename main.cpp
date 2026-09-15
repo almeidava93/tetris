@@ -1,10 +1,16 @@
 #include "raylib.h"
+#include <random>
 #include <vector>
+#include <optional>
 
 const int screenWidth = 800;
 const int screenHeight = 450;
 const int targetFPS = 60;
 const char *windowTitle = "Tetris";
+
+// initialize random number generator
+std::random_device rd;
+std::mt19937 gen(rd()); // Mersenne Twister engine for random number generation
 
 class Position
 {
@@ -38,6 +44,17 @@ typedef enum BlockType
     Z
 } BlockType;
 
+Color BlockColors[7] =
+    {
+        {0, 240, 240, 255}, // I,
+        {0, 0, 240, 255},   // J,
+        {240, 160, 0, 255}, // L,
+        {240, 240, 0, 255}, // O,
+        {0, 240, 0, 255},   // S,
+        {160, 0, 240, 255}, // T,
+        {240, 0, 0, 255}    // Z
+};
+
 class Block
 {
 public:
@@ -48,6 +65,19 @@ public:
     Shape matrixShape;                     //  dimensions of the block's matrix representation
     std::vector<std::vector<bool>> matrix; // 2D vector to represent the block's shape
     Texture2D *texture;                    // Pointer to the texture for the block
+
+    // Default constructor: creates random blocks
+    Block(Texture2D *texture = nullptr)
+    {
+        // Sample shape and color pair
+        std::uniform_int_distribution<> dis(0, 6);
+        this->type = static_cast<BlockType>(dis(gen));
+        this->color = BlockColors[this->type];
+        this->position = {0, 0};
+        this->size = {20, 20};
+        this->texture = texture;
+        initBlockMatrix();
+    }
 
     Block(BlockType type = J, Color color = GRAY, Position position = {0, 0}, Size size = {20, 20}, Texture2D *texture = nullptr)
     {
@@ -138,7 +168,7 @@ public:
                 {
                     if (this->texture)
                     {
-                        DrawTexture(*this->texture, this->position.x + (col * this->size.width), this->position.y + (row * this->size.height), BLUE);
+                        DrawTexture(*this->texture, this->position.x + (col * this->size.width), this->position.y + (row * this->size.height), this->color);
                     }
                     else
                     {
@@ -153,13 +183,18 @@ public:
     {
         return this->matrixShape.rows * this->size.height;
     }
+
+    int getBlockWidth()
+    {
+        return this->matrixShape.cols * this->size.width;
+    }
 };
 
 class Brick
 {
 public:
     Texture2D *texture;
-    Position position; // Position of the brick on the board
+    Position position;
     Color color;
 };
 
@@ -168,7 +203,7 @@ class TetrisBoard
 public:
     Shape boardShape = {20, 10};
     Size blockSize = {20, 20};
-    Brick bricks[20][10]{};
+    std::optional<Brick> bricks[20][10]{};
 
     void draw()
     {
@@ -182,14 +217,14 @@ public:
         {
             for (int col = 0; col < this->boardShape.cols; col++)
             {
-                Brick brick = this->bricks[row][col];
-                if (brick.texture)
+                std::optional<Brick> brick = this->bricks[row][col];
+                if (brick.has_value() && brick->texture != nullptr)
                 {
-                    DrawTexture(*brick.texture, brick.position.x, brick.position.y, BLUE);
+                    DrawTexture(*brick->texture, brick->position.x, brick->position.y, brick->color);
                 }
                 else
                 {
-                    DrawRectangle(brick.position.x, brick.position.y, this->blockSize.width, this->blockSize.height, brick.color);
+                    DrawRectangle(brick->position.x, brick->position.y, this->blockSize.width, this->blockSize.height, brick->color);
                 }
             }
         }
@@ -230,6 +265,35 @@ public:
     {
         return this->boardShape.rows * this->blockSize.height;
     }
+
+    int getBoardWidth()
+    {
+        return this->boardShape.cols * this->blockSize.width;
+    }
+
+    void manageCollisions(Block &block)
+    {
+        for (int row = 0; row < block.matrixShape.rows; row++)
+        {
+            for (int col = 0; col < block.matrixShape.cols; col++)
+            {
+                if (block.matrix[row][col])
+                {
+                    int boardRow = static_cast<int>((block.position.y + (row * block.size.height)) / this->blockSize.height);
+                    int boardCol = static_cast<int>((block.position.x + (col * block.size.width)) / this->blockSize.width);
+
+                    if (boardRow >= this->boardShape.rows || boardCol < 0 || boardCol >= this->boardShape.cols || this->bricks[boardRow][boardCol].has_value())
+                    {
+                        block.position.y -= block.size.height; // Move the block one slot up when collision is detected
+                        this->addBlock(block);
+                        Block newBlock = Block(block.texture);
+                        block = newBlock;
+                        return;
+                    }
+                }
+            }
+        }
+    }
 };
 
 int main()
@@ -237,21 +301,19 @@ int main()
     InitWindow(screenWidth, screenHeight, windowTitle);
     SetTargetFPS(60);
     int frameCount = 0;
-    Block block(S);
-    TetrisBoard board;
 
     // LOAD TEXTURES
-    Texture2D brickTexture = LoadTexture("assets/sprites/brick-var-1.png");
-    block.texture = &brickTexture;
+    Texture2D brickTexture = LoadTexture("assets/sprites/brick-var-4.png");
+
+    // CREATE OBJECTS
+    Block block = Block(&brickTexture);
+    TetrisBoard board;
 
     // GAME LOOP
     while (!WindowShouldClose())
     {
-        BeginDrawing();
-        ClearBackground(BLACK);
+        // GAME LOGIC
         frameCount++;
-
-        board.draw();
 
         if (IsKeyPressed(KEY_ENTER))
         {
@@ -263,32 +325,27 @@ int main()
             block.position.y += 20;
         }
 
-        if (frameCount % 10 == 0)
+        if (IsKeyPressed(KEY_LEFT) && block.position.x > 0)
         {
-            if (IsKeyDown(KEY_LEFT))
-            {
-                block.position.x -= block.size.width;
-            }
+            block.position.x -= block.size.width;
+        }
 
-            if (IsKeyDown(KEY_RIGHT))
-            {
-                block.position.x += block.size.width;
-            }
+        if (IsKeyPressed(KEY_RIGHT) && block.position.x + block.getBlockWidth() < board.getBoardWidth())
+        {
+            block.position.x += block.size.width;
         }
 
         if (IsKeyDown(KEY_DOWN))
         {
-            block.position.y += 10;
+            block.position.y += 20;
         }
 
-        if (block.position.y + block.getBlockHeight() > board.getBoardHeight())
-        {
-            block.position.y = board.getBoardHeight() - block.getBlockHeight();
-            board.addBlock(block);
-            block = Block(S);
-            block.texture = &brickTexture;
-        }
+        board.manageCollisions(block);
 
+        // DRAWING
+        BeginDrawing();
+        ClearBackground(BLACK);
+        board.draw();
         block.draw();
         EndDrawing();
     }
