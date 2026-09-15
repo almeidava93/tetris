@@ -9,6 +9,27 @@ const int screenHeight = 450;
 const int targetFPS = 60;
 const char *windowTitle = "Tetris";
 
+class DifficultyLevel
+{
+public:
+    int levelChangeNumberOfLines;
+    int blockVerticalSpeed;        // Frames per step. Lower is faster.
+    int blockHorizontalSpeed = 20; // Frames per step. Lower is faster.
+};
+
+DifficultyLevel difficultyLevels[10] =
+    {
+        {10, 60},
+        {20, 50},
+        {30, 40},
+        {40, 30},
+        {50, 20},
+        {60, 10},
+        {70, 5, 5},
+        {80, 3, 3},
+        {90, 2, 2},
+        {100, 1, 1}};
+
 class Position
 {
 public:
@@ -213,6 +234,11 @@ public:
         static_cast<float>(screenWidth - this->getBoardWidth()) / 2,
         20,
     };
+    int linesCleared = 0;
+    int linesClearedLastCombo = 0;
+    int score = 0;
+    int difficultyLevelIndex = 9;
+    DifficultyLevel difficultyLevel = difficultyLevels[this->difficultyLevelIndex];
 
     void draw()
     {
@@ -369,6 +395,7 @@ public:
 
     void manageCompleteLines()
     {
+        int linesCleared = 0;
         for (int row = 0; row < this->boardShape.rows; row++)
         {
             bool lineComplete = true;
@@ -382,6 +409,7 @@ public:
             }
             if (lineComplete)
             {
+                linesCleared++;
                 for (int col = 0; col < this->boardShape.cols; col++)
                 {
                     this->bricks[row][col] = std::nullopt;
@@ -394,6 +422,46 @@ public:
                     }
                 }
             }
+        }
+        this->updateScore(linesCleared);
+    }
+
+    void updateScore(int linesCleared)
+    {
+        int numLinesPoints;
+        switch (linesCleared)
+        {
+        case 1:
+            numLinesPoints = 100;
+            break;
+        case 2:
+            numLinesPoints = 300;
+            break;
+        case 3:
+            numLinesPoints = 500;
+            break;
+        case 4:
+            numLinesPoints = 800;
+            break;
+        default:
+            numLinesPoints = 0;
+            break;
+        }
+        this->score += numLinesPoints * (this->difficultyLevelIndex + 1);
+        this->linesCleared += linesCleared;
+        this->linesClearedLastCombo = linesCleared;
+    }
+
+    void evaluateDifficultyLevel()
+    {
+        int maxDifficultyLevelIndex = sizeof(difficultyLevels) / sizeof(DifficultyLevel) - 1;
+        if (this->linesCleared >= this->difficultyLevel.levelChangeNumberOfLines)
+        {
+            if (this->difficultyLevelIndex < maxDifficultyLevelIndex)
+            {
+                this->difficultyLevelIndex++;
+            }
+            this->difficultyLevel = difficultyLevels[this->difficultyLevelIndex];
         }
     }
 };
@@ -425,6 +493,7 @@ int main()
         // GAME LOGIC
         frameCount++;
         int blockVerticalStep = 0;
+        int lastHorizontalMovementFrame = 0;
 
         switch (gameScreen)
         {
@@ -442,15 +511,16 @@ int main()
                 }
             }
 
-            if (frameCount % 60 == 0)
+            if (frameCount % board.difficultyLevel.blockVerticalSpeed == 0 || IsKeyDown(KEY_DOWN))
             {
                 block.position.y += 20;
                 blockVerticalStep += 20;
             }
 
-            if (IsKeyPressed(KEY_LEFT))
+            if (IsKeyPressed(KEY_LEFT) || (IsKeyDown(KEY_LEFT) && (frameCount - lastHorizontalMovementFrame) % board.difficultyLevel.blockHorizontalSpeed == 0))
             {
                 block.position.x -= block.size.width;
+                lastHorizontalMovementFrame = frameCount;
 
                 if (board.collidesWithExistingBricks(block) || board.collidesWithBorder(block))
                 {
@@ -458,19 +528,14 @@ int main()
                 }
             }
 
-            if (IsKeyPressed(KEY_RIGHT))
+            if (IsKeyPressed(KEY_RIGHT) || (IsKeyDown(KEY_RIGHT) && (frameCount - lastHorizontalMovementFrame) % board.difficultyLevel.blockHorizontalSpeed == 0))
             {
+                lastHorizontalMovementFrame = frameCount;
                 block.position.x += block.size.width;
                 if (board.collidesWithExistingBricks(block) || board.collidesWithBorder(block))
                 {
                     block.position.x -= block.size.width;
                 }
-            }
-
-            if (IsKeyDown(KEY_DOWN))
-            {
-                block.position.y += 20;
-                blockVerticalStep += 20;
             }
 
             board.manageCollisions(block, blockVerticalStep);
@@ -485,6 +550,9 @@ int main()
                 board.manageCompleteLines();
                 board.pieceLanded = false;
             }
+
+            // Evaluate difficulty level
+            board.evaluateDifficultyLevel();
             break;
 
         case GAME_OVER:
@@ -502,6 +570,10 @@ int main()
         case GAME_PLAY:
             board.draw();
             block.draw();
+            DrawText(TextFormat("SCORE: %05d", board.score), 20, 20, 20, GRAY);
+            DrawText(TextFormat("Lines cleared: %01d", board.linesCleared), 20, 60, 20, GRAY);
+            DrawText(TextFormat("Level: %01d", board.difficultyLevelIndex + 1), 20, 40, 20, GRAY);
+
             break;
         case GAME_OVER:
             ClearBackground(BLUE);
