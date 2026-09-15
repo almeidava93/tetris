@@ -2,6 +2,8 @@
 #include <random>
 #include <vector>
 #include <optional>
+#include <string>
+#include <map>
 
 // Global variables
 const int screenWidth = 800;
@@ -29,6 +31,44 @@ DifficultyLevel difficultyLevels[10] =
         {80, 3, 3},
         {90, 2, 2},
         {100, 1, 1}};
+
+class SoundEffect
+{
+public:
+    std::string audioFilePath;
+    Sound sound;
+
+    SoundEffect() {}
+
+    SoundEffect(std::string audioFilePath)
+    {
+        this->audioFilePath = audioFilePath;
+        this->sound = LoadSound(audioFilePath.c_str());
+    }
+
+    void play()
+    {
+        PlaySound(this->sound);
+    }
+
+    void unload()
+    {
+        UnloadSound(this->sound);
+    }
+};
+
+typedef enum SoundEffectTrigger
+{
+    BLOCK_LANDING,
+    BLOCK_COLLISION,
+    GAME_OVER_SFX,
+    SINGLE_LINE_CLEAR,
+    DOUBLE_LINE_CLEAR,
+    TRIPLE_LINE_CLEAR,
+    TETRIS_LINE_CLEAR,
+    GAME_START,
+    LEVEL_UP
+} SoundEffectTrigger;
 
 class Position
 {
@@ -237,8 +277,10 @@ public:
     int linesCleared = 0;
     int linesClearedLastCombo = 0;
     int score = 0;
-    int difficultyLevelIndex = 9;
+    int difficultyLevelIndex = 0;
     DifficultyLevel difficultyLevel = difficultyLevels[this->difficultyLevelIndex];
+
+    TetrisBoard() {}
 
     void draw()
     {
@@ -452,7 +494,7 @@ public:
         this->linesClearedLastCombo = linesCleared;
     }
 
-    void evaluateDifficultyLevel()
+    bool hasLeveledUp()
     {
         int maxDifficultyLevelIndex = sizeof(difficultyLevels) / sizeof(DifficultyLevel) - 1;
         if (this->linesCleared >= this->difficultyLevel.levelChangeNumberOfLines)
@@ -462,6 +504,31 @@ public:
                 this->difficultyLevelIndex++;
             }
             this->difficultyLevel = difficultyLevels[this->difficultyLevelIndex];
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    void reset()
+    {
+        this->score = 0;
+        this->linesCleared = 0;
+        this->linesClearedLastCombo = 0;
+        this->difficultyLevelIndex = 0;
+        this->difficultyLevel = difficultyLevels[this->difficultyLevelIndex];
+        this->gameOver = false;
+        this->pieceLanded = false;
+
+        // clear the board
+        for (int row = 0; row < this->boardShape.rows; row++)
+        {
+            for (int col = 0; col < this->boardShape.cols; col++)
+            {
+                this->bricks[row][col] = std::nullopt;
+            }
         }
     }
 };
@@ -482,10 +549,26 @@ int main()
     // LOAD TEXTURES
     Texture2D brickTexture = LoadTexture("assets/sprites/brick-var-4.png");
 
+    // Load sound effects
+    InitAudioDevice();
+    std::map<SoundEffectTrigger, SoundEffect> soundEffects;
+    soundEffects[BLOCK_LANDING] = SoundEffect("assets/audio/block-landing.wav");
+    // soundEffects[BLOCK_COLLISION] = SoundEffect("assets/audio/block-collision.wav");
+    soundEffects[GAME_OVER_SFX] = SoundEffect("assets/audio/game-over.mp3");
+    soundEffects[SINGLE_LINE_CLEAR] = SoundEffect("assets/audio/single-line-clear.wav");
+    soundEffects[DOUBLE_LINE_CLEAR] = SoundEffect("assets/audio/double-line-clear.wav");
+    soundEffects[TRIPLE_LINE_CLEAR] = SoundEffect("assets/audio/triple-line-clear.wav");
+    soundEffects[TETRIS_LINE_CLEAR] = SoundEffect("assets/audio/tetris-line-clear.wav");
+    soundEffects[GAME_START] = SoundEffect("assets/audio/game-start.wav");
+    soundEffects[LEVEL_UP] = SoundEffect("assets/audio/level-up.wav");
+
     // CREATE OBJECTS
     TetrisBoard board;
     Block block = Block(&brickTexture, board.position);
     GameScreen gameScreen = GAME_PLAY;
+
+    // GAME START
+    soundEffects[GAME_START].play();
 
     // GAME LOOP
     while (!WindowShouldClose())
@@ -542,20 +625,52 @@ int main()
             if (board.gameOver)
             {
                 gameScreen = GAME_OVER;
+                soundEffects.at(GAME_OVER_SFX).play();
             }
 
             // Do line clearing only when a piece has landed
             if (board.pieceLanded)
             {
                 board.manageCompleteLines();
+                soundEffects.at(BLOCK_LANDING).play();
                 board.pieceLanded = false;
             }
 
+            // Sound effects for clearing lines
+            switch (board.linesClearedLastCombo)
+            {
+            case 1:
+                soundEffects.at(SINGLE_LINE_CLEAR).play();
+                board.linesClearedLastCombo = 0;
+                break;
+            case 2:
+                soundEffects.at(DOUBLE_LINE_CLEAR).play();
+                board.linesClearedLastCombo = 0;
+                break;
+            case 3:
+                soundEffects.at(TRIPLE_LINE_CLEAR).play();
+                board.linesClearedLastCombo = 0;
+                break;
+            case 4:
+                soundEffects.at(TETRIS_LINE_CLEAR).play();
+                board.linesClearedLastCombo = 0;
+                break;
+            }
+
             // Evaluate difficulty level
-            board.evaluateDifficultyLevel();
+            if (board.hasLeveledUp())
+                soundEffects.at(LEVEL_UP).play();
             break;
 
         case GAME_OVER:
+
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                board.reset();
+                gameScreen = GAME_PLAY;
+                soundEffects[GAME_START].play();
+            }
+
             break;
         }
 
@@ -579,6 +694,8 @@ int main()
             ClearBackground(BLUE);
             board.draw();
             block.draw();
+            DrawText("PRESS ENTER", 20, 20, 20, BLACK);
+            DrawText("TO RESTART", 20, 40, 20, BLACK);
             break;
         }
 
@@ -587,6 +704,12 @@ int main()
 
     // Unload textures
     UnloadTexture(brickTexture);
+
+    // Unload sound effects
+    for (auto &soundEffect : soundEffects)
+    {
+        soundEffect.second.unload();
+    }
 
     CloseWindow();
     return 0;
