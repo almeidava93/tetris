@@ -271,7 +271,7 @@ public:
         return this->boardShape.cols * this->blockSize.width;
     }
 
-    void manageCollisions(Block &block)
+    void manageCollisions(Block &block, int verticalStep)
     {
         for (int row = 0; row < block.matrixShape.rows; row++)
         {
@@ -284,7 +284,7 @@ public:
 
                     if (boardRow >= this->boardShape.rows || boardCol < 0 || boardCol >= this->boardShape.cols || this->bricks[boardRow][boardCol].has_value())
                     {
-                        block.position.y -= block.size.height; // Move the block one slot up when collision is detected
+                        block.position.y -= verticalStep; // Move the block one slot up when collision is detected
                         this->addBlock(block);
                         Block newBlock = Block(block.texture);
                         block = newBlock;
@@ -314,6 +314,7 @@ int main()
     {
         // GAME LOGIC
         frameCount++;
+        int blockVerticalStep = 0;
 
         if (IsKeyPressed(KEY_ENTER))
         {
@@ -323,6 +324,7 @@ int main()
         if (frameCount % 60 == 0)
         {
             block.position.y += 20;
+            blockVerticalStep += 20;
         }
 
         if (IsKeyPressed(KEY_LEFT) && block.position.x > 0)
@@ -338,9 +340,10 @@ int main()
         if (IsKeyDown(KEY_DOWN))
         {
             block.position.y += 20;
+            blockVerticalStep += 20;
         }
 
-        board.manageCollisions(block);
+        board.manageCollisions(block, blockVerticalStep);
 
         // DRAWING
         BeginDrawing();
