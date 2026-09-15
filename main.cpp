@@ -3,14 +3,11 @@
 #include <vector>
 #include <optional>
 
+// Global variables
 const int screenWidth = 800;
 const int screenHeight = 450;
 const int targetFPS = 60;
 const char *windowTitle = "Tetris";
-
-// initialize random number generator
-std::random_device rd;
-std::mt19937 gen(rd()); // Mersenne Twister engine for random number generation
 
 class Position
 {
@@ -67,16 +64,19 @@ public:
     Texture2D *texture;                    // Pointer to the texture for the block
 
     // Default constructor: creates random blocks
-    Block(Texture2D *texture = nullptr)
+    Block(Texture2D *texture = nullptr, Position position = {0, 0})
     {
-        // Sample shape and color pair
+        // initialize random number generator
+        std::random_device rd;
+        std::mt19937 gen(rd()); // Mersenne Twister engine for random number generation
         std::uniform_int_distribution<> dis(0, 6);
+        // Sample shape and color pair
         this->type = static_cast<BlockType>(dis(gen));
         this->color = BlockColors[this->type];
-        this->position = {0, 0};
         this->size = {20, 20};
-        this->texture = texture;
         initBlockMatrix();
+        this->position = {position.x, position.y - static_cast<float>(this->getBlockHeight())};
+        this->texture = texture;
     }
 
     Block(BlockType type = J, Color color = GRAY, Position position = {0, 0}, Size size = {20, 20}, Texture2D *texture = nullptr)
@@ -141,7 +141,7 @@ public:
         }
     }
 
-    void rotate()
+    Block rotate()
     { // Rotate the block 90 degrees clockwise
         Shape newMatrixShape = {this->matrixShape.cols, this->matrixShape.rows};
         std::vector<std::vector<bool>> newMatrix(newMatrixShape.rows, std::vector<bool>(newMatrixShape.cols, false)); // Create a new matrix with swapped dimensions
@@ -154,8 +154,10 @@ public:
                 newMatrix[col][this->matrixShape.rows - 1 - row] = this->matrix[row][col];
             }
         }
-        this->matrix = newMatrix;
-        this->matrixShape = newMatrixShape;
+        Block rotatedBlock = Block(this->type, this->color, this->position, this->size, this->texture); // Create a new block with the rotated matrix
+        rotatedBlock.matrix = newMatrix;
+        rotatedBlock.matrixShape = newMatrixShape;
+        return rotatedBlock;
     }
 
     void draw()
@@ -172,7 +174,8 @@ public:
                     }
                     else
                     {
-                        DrawRectangle(this->position.x + (col * this->size.width), this->position.y + (row * this->size.height), this->size.width, this->size.height, this->color);
+                        printf("Warning: Block at row %d, col %d has no texture assigned.\n", row, col);
+                        exit(1);
                     }
                 }
             }
@@ -205,10 +208,15 @@ public:
     Size blockSize = {20, 20};
     std::optional<Brick> bricks[20][10]{std::nullopt}; // 2D array to hold the bricks on the board
     bool pieceLanded = false;
+    bool gameOver = false;
+    Position position = {
+        static_cast<float>(screenWidth - this->getBoardWidth()) / 2,
+        20,
+    };
 
     void draw()
     {
-        DrawRectangle(0, 0, this->boardShape.cols * this->blockSize.width, this->boardShape.rows * this->blockSize.height, GRAY);
+        DrawRectangle(this->position.x, this->position.y, this->boardShape.cols * this->blockSize.width, this->boardShape.rows * this->blockSize.height, GRAY);
         this->drawBricks();
     }
 
@@ -226,7 +234,7 @@ public:
                         printf("Warning: Brick at row %d, col %d has no texture assigned.\n", row, col);
                         exit(1);
                     }
-                    DrawTexture(*brick->texture, col * this->blockSize.width, row * this->blockSize.height, brick->color);
+                    DrawTexture(*brick->texture, col * this->blockSize.width + this->position.x, row * this->blockSize.height + this->position.y, brick->color);
                 }
             }
         }
@@ -254,8 +262,8 @@ public:
                     brick.color = block.color;
                     brick.texture = block.texture;
 
-                    int boardRow = static_cast<int>(brick.position.y / this->blockSize.height);
-                    int boardCol = static_cast<int>(brick.position.x / this->blockSize.width);
+                    int boardRow = static_cast<int>((brick.position.y - this->position.y) / this->blockSize.height);
+                    int boardCol = static_cast<int>((brick.position.x - this->position.x) / this->blockSize.width);
 
                     this->addBrick(brick, boardRow, boardCol);
                 }
@@ -279,16 +287,22 @@ public:
         {
             for (int col = 0; col < block.matrixShape.cols; col++)
             {
-                if (block.matrix[row][col])
+                if (block.matrix[row][col] && block.position.y >= this->position.y)
                 {
-                    int boardRow = static_cast<int>((block.position.y + (row * block.size.height)) / this->blockSize.height);
-                    int boardCol = static_cast<int>((block.position.x + (col * block.size.width)) / this->blockSize.width);
 
-                    if (boardRow >= this->boardShape.rows || boardCol < 0 || boardCol >= this->boardShape.cols || this->bricks[boardRow][boardCol].has_value())
+                    if (this->collidesWithBorder(block) || this->collidesWithExistingBricks(block))
                     {
+
                         block.position.y -= verticalStep; // Move the block one slot up when collision is detected
+
+                        if (block.position.y < this->position.y)
+                        {
+                            this->gameOver = true;
+                            return;
+                        }
+
                         this->addBlock(block);
-                        Block newBlock = Block(block.texture);
+                        Block newBlock = Block(block.texture, this->position);
                         block = newBlock;
                         this->pieceLanded = true;
                         return;
@@ -296,6 +310,61 @@ public:
                 }
             }
         }
+    }
+
+    bool collidesWithBorder(Block &block)
+    {
+        for (int row = 0; row < block.matrixShape.rows; row++)
+        {
+            for (int col = 0; col < block.matrixShape.cols; col++)
+            {
+                if (block.matrix[row][col])
+                {
+                    // Collision with left border
+                    if (block.position.x < this->position.x)
+                    {
+                        printf("Collision with left border\n");
+                        return true;
+                    }
+
+                    // Collision with right border
+                    if (block.position.x + (col * block.size.width) >= this->position.x + this->getBoardWidth())
+                    {
+                        printf("Collision with right border\n");
+                        return true;
+                    }
+
+                    // Collision with bottom border
+                    if (block.position.y + (row * block.size.height) >= this->position.y + this->getBoardHeight())
+                    {
+                        printf("Collision with bottom border\n");
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool collidesWithExistingBricks(Block &block)
+    {
+        for (int row = 0; row < block.matrixShape.rows; row++)
+        {
+            for (int col = 0; col < block.matrixShape.cols; col++)
+            {
+                int boardRow = static_cast<int>((block.position.y + row * block.size.height - this->position.y) / this->blockSize.height);
+                int boardCol = static_cast<int>((block.position.x + (col * block.size.width) - this->position.x) / this->blockSize.width);
+
+                if (block.matrix[row][col] &&
+                    boardRow >= 0 && boardRow < this->boardShape.rows &&
+                    boardCol >= 0 && boardCol < this->boardShape.cols &&
+                    this->bricks[boardRow][boardCol].has_value())
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     void manageCompleteLines()
@@ -329,6 +398,13 @@ public:
     }
 };
 
+typedef enum GameScreen
+{
+    GAME_MENU,
+    GAME_PLAY,
+    GAME_OVER
+} GameScreen;
+
 int main()
 {
     InitWindow(screenWidth, screenHeight, windowTitle);
@@ -339,8 +415,9 @@ int main()
     Texture2D brickTexture = LoadTexture("assets/sprites/brick-var-4.png");
 
     // CREATE OBJECTS
-    Block block = Block(&brickTexture);
     TetrisBoard board;
+    Block block = Block(&brickTexture, board.position);
+    GameScreen gameScreen = GAME_PLAY;
 
     // GAME LOOP
     while (!WindowShouldClose())
@@ -349,41 +426,90 @@ int main()
         frameCount++;
         int blockVerticalStep = 0;
 
-        if (IsKeyPressed(KEY_ENTER))
+        switch (gameScreen)
         {
-            block.rotate();
-        }
+        case GAME_MENU:
+            break;
 
-        if (frameCount % 60 == 0)
-        {
-            block.position.y += 20;
-            blockVerticalStep += 20;
-        }
+        case GAME_PLAY:
 
-        if (IsKeyPressed(KEY_LEFT) && block.position.x > 0)
-        {
-            block.position.x -= block.size.width;
-        }
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                Block rotatedBlock = block.rotate();
+                if (!board.collidesWithBorder(rotatedBlock) && !board.collidesWithExistingBricks(rotatedBlock))
+                {
+                    block = rotatedBlock;
+                }
+            }
 
-        if (IsKeyPressed(KEY_RIGHT) && block.position.x + block.getBlockWidth() < board.getBoardWidth())
-        {
-            block.position.x += block.size.width;
-        }
+            if (frameCount % 60 == 0)
+            {
+                block.position.y += 20;
+                blockVerticalStep += 20;
+            }
 
-        if (IsKeyDown(KEY_DOWN))
-        {
-            block.position.y += 20;
-            blockVerticalStep += 20;
-        }
+            if (IsKeyPressed(KEY_LEFT))
+            {
+                block.position.x -= block.size.width;
 
-        board.manageCollisions(block, blockVerticalStep);
-        board.manageCompleteLines();
+                if (board.collidesWithExistingBricks(block) || board.collidesWithBorder(block))
+                {
+                    block.position.x += block.size.width;
+                }
+            }
+
+            if (IsKeyPressed(KEY_RIGHT))
+            {
+                block.position.x += block.size.width;
+                if (board.collidesWithExistingBricks(block) || board.collidesWithBorder(block))
+                {
+                    block.position.x -= block.size.width;
+                }
+            }
+
+            if (IsKeyDown(KEY_DOWN))
+            {
+                block.position.y += 20;
+                blockVerticalStep += 20;
+            }
+
+            board.manageCollisions(block, blockVerticalStep);
+            if (board.gameOver)
+            {
+                gameScreen = GAME_OVER;
+            }
+
+            // Do line clearing only when a piece has landed
+            if (board.pieceLanded)
+            {
+                board.manageCompleteLines();
+                board.pieceLanded = false;
+            }
+            break;
+
+        case GAME_OVER:
+            break;
+        }
 
         // DRAWING
         BeginDrawing();
         ClearBackground(BLACK);
-        board.draw();
-        block.draw();
+
+        switch (gameScreen)
+        {
+        case GAME_MENU:
+            break;
+        case GAME_PLAY:
+            board.draw();
+            block.draw();
+            break;
+        case GAME_OVER:
+            ClearBackground(BLUE);
+            board.draw();
+            block.draw();
+            break;
+        }
+
         EndDrawing();
     }
 
