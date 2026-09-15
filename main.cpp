@@ -38,19 +38,10 @@ typedef enum BlockType
     Z
 } BlockType;
 
-typedef enum BlockOrientation
-{
-    UP,
-    RIGHT,
-    DOWN,
-    LEFT
-} BlockOrientation;
-
 class Block
 {
 public:
     BlockType type;
-    BlockOrientation orientation;
     Color color = GRAY;
     Position position;
     Size size;                             // width and height of each square in the block
@@ -58,13 +49,13 @@ public:
     std::vector<std::vector<bool>> matrix; // 2D vector to represent the block's shape
     Texture2D *texture;                    // Pointer to the texture for the block
 
-    Block(BlockType type = J, BlockOrientation orientation = UP, Color color = GRAY, Position position = {0, 0}, Size size = {20, 20})
+    Block(BlockType type = J, Color color = GRAY, Position position = {0, 0}, Size size = {20, 20}, Texture2D *texture = nullptr)
     {
         this->type = type;
-        this->orientation = orientation;
         this->color = color;
         this->position = position;
         this->size = size;
+        this->texture = texture;
         initBlockMatrix();
     }
 
@@ -164,12 +155,90 @@ public:
     }
 };
 
+class Brick
+{
+public:
+    Texture2D *texture;
+    Position position; // Position of the brick on the board
+    Color color;
+};
+
+class TetrisBoard
+{
+public:
+    Shape boardShape = {20, 10};
+    Size blockSize = {20, 20};
+    Brick bricks[20][10]{};
+
+    void draw()
+    {
+        DrawRectangle(0, 0, this->boardShape.cols * this->blockSize.width, this->boardShape.rows * this->blockSize.height, GRAY);
+        this->drawBricks();
+    }
+
+    void drawBricks()
+    {
+        for (int row = 0; row < this->boardShape.rows; row++)
+        {
+            for (int col = 0; col < this->boardShape.cols; col++)
+            {
+                Brick brick = this->bricks[row][col];
+                if (brick.texture)
+                {
+                    DrawTexture(*brick.texture, brick.position.x, brick.position.y, BLUE);
+                }
+                else
+                {
+                    DrawRectangle(brick.position.x, brick.position.y, this->blockSize.width, this->blockSize.height, brick.color);
+                }
+            }
+        }
+    }
+
+    void addBrick(Brick brick, int row, int col)
+    {
+        if (row >= 0 && row < this->boardShape.rows && col >= 0 && col < this->boardShape.cols)
+        {
+            this->bricks[row][col] = brick;
+        }
+    }
+
+    void addBlock(Block block)
+    {
+        for (int row = 0; row < block.matrixShape.rows; row++)
+        {
+            for (int col = 0; col < block.matrixShape.cols; col++)
+            {
+                if (block.matrix[row][col])
+                {
+                    Brick brick;
+                    brick.position.x = block.position.x + (col * block.size.width);
+                    brick.position.y = block.position.y + (row * block.size.height);
+                    brick.color = block.color;
+                    brick.texture = block.texture;
+
+                    int boardRow = static_cast<int>(brick.position.y / this->blockSize.height);
+                    int boardCol = static_cast<int>(brick.position.x / this->blockSize.width);
+
+                    this->addBrick(brick, boardRow, boardCol);
+                }
+            }
+        }
+    }
+
+    int getBoardHeight()
+    {
+        return this->boardShape.rows * this->blockSize.height;
+    }
+};
+
 int main()
 {
     InitWindow(screenWidth, screenHeight, windowTitle);
     SetTargetFPS(60);
     int frameCount = 0;
     Block block(S);
+    TetrisBoard board;
 
     // LOAD TEXTURES
     Texture2D brickTexture = LoadTexture("assets/sprites/brick-var-1.png");
@@ -181,6 +250,8 @@ int main()
         BeginDrawing();
         ClearBackground(BLACK);
         frameCount++;
+
+        board.draw();
 
         if (IsKeyPressed(KEY_ENTER))
         {
@@ -210,9 +281,12 @@ int main()
             block.position.y += 10;
         }
 
-        if (block.position.y + block.getBlockHeight() > screenHeight)
+        if (block.position.y + block.getBlockHeight() > board.getBoardHeight())
         {
-            block.position.y = screenHeight - block.getBlockHeight();
+            block.position.y = board.getBoardHeight() - block.getBlockHeight();
+            board.addBlock(block);
+            block = Block(S);
+            block.texture = &brickTexture;
         }
 
         block.draw();
