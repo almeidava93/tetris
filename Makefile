@@ -7,7 +7,7 @@ endif
 
 # Define compile command
 ifeq ($(DETECTED_OS), Windows)
-	COMPILE_COMMAND = g++ main.cpp -o tetris.exe -O1 -Wall -std=c++17 -Wno-missing-braces -I include/ -L lib/ -lraylib -lopengl32 -lgdi32 -lwinmm
+	COMPILE_COMMAND = g++ main.cpp -o tetris.exe -mwindows -O1 -Wall -std=c++17 -Wno-missing-braces -I include/ -L lib/ -lraylib -lopengl32 -lgdi32 -lwinmm
 
 # MacOS command varies depending on the chip: Intel vs Apple Silicon
 else ifeq ($(DETECTED_OS),Darwin)
