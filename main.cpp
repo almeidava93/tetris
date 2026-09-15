@@ -203,7 +203,8 @@ class TetrisBoard
 public:
     Shape boardShape = {20, 10};
     Size blockSize = {20, 20};
-    std::optional<Brick> bricks[20][10]{};
+    std::optional<Brick> bricks[20][10]{std::nullopt}; // 2D array to hold the bricks on the board
+    bool pieceLanded = false;
 
     void draw()
     {
@@ -221,10 +222,6 @@ public:
                 if (brick.has_value() && brick->texture != nullptr)
                 {
                     DrawTexture(*brick->texture, brick->position.x, brick->position.y, brick->color);
-                }
-                else
-                {
-                    DrawRectangle(brick->position.x, brick->position.y, this->blockSize.width, this->blockSize.height, brick->color);
                 }
             }
         }
@@ -288,8 +285,32 @@ public:
                         this->addBlock(block);
                         Block newBlock = Block(block.texture);
                         block = newBlock;
+                        this->pieceLanded = true;
                         return;
                     }
+                }
+            }
+        }
+    }
+
+    void manageCompleteLines()
+    {
+        for (int row = 0; row < this->boardShape.rows; row++)
+        {
+            bool lineComplete = true;
+            for (int col = 0; col < this->boardShape.cols; col++)
+            {
+                if (!this->bricks[row][col].has_value())
+                {
+                    lineComplete = false;
+                    break;
+                }
+            }
+            if (lineComplete)
+            {
+                for (int col = 0; col < this->boardShape.cols; col++)
+                {
+                    this->bricks[row][col] = std::nullopt;
                 }
             }
         }
@@ -344,6 +365,7 @@ int main()
         }
 
         board.manageCollisions(block, blockVerticalStep);
+        board.manageCompleteLines();
 
         // DRAWING
         BeginDrawing();
