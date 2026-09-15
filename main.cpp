@@ -219,9 +219,14 @@ public:
             for (int col = 0; col < this->boardShape.cols; col++)
             {
                 std::optional<Brick> brick = this->bricks[row][col];
-                if (brick.has_value() && brick->texture != nullptr)
+                if (brick.has_value())
                 {
-                    DrawTexture(*brick->texture, brick->position.x, brick->position.y, brick->color);
+                    if (brick->texture == nullptr)
+                    {
+                        printf("Warning: Brick at row %d, col %d has no texture assigned.\n", row, col);
+                        exit(1);
+                    }
+                    DrawTexture(*brick->texture, col * this->blockSize.width, row * this->blockSize.height, brick->color);
                 }
             }
         }
@@ -311,6 +316,13 @@ public:
                 for (int col = 0; col < this->boardShape.cols; col++)
                 {
                     this->bricks[row][col] = std::nullopt;
+
+                    // Move all rows above down by one
+                    for (int r = row; r > 0; r--)
+                    {
+                        this->bricks[r][col] = this->bricks[r - 1][col];
+                        this->bricks[r - 1][col] = std::nullopt;
+                    }
                 }
             }
         }
