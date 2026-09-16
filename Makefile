@@ -7,15 +7,15 @@ endif
 
 # Define compile command
 ifeq ($(DETECTED_OS), Windows)
-	COMPILE_COMMAND = g++ main.cpp -o tetris.exe -mwindows -O1 -Wall -std=c++17 -Wno-missing-braces -I include/ -L lib/ -lraylib -lopengl32 -lgdi32 -lwinmm
+	COMPILE_COMMAND = g++ main.cpp -o tetris.exe -mwindows -static -O1 -Wall -std=c++17 -Wno-missing-braces -I include/ -L lib/ -lraylib -lopengl32 -lgdi32 -lwinmm
 
 # MacOS command varies depending on the chip: Intel vs Apple Silicon
 else ifeq ($(DETECTED_OS),Darwin)
     HAS_APPLE_SILICON := $(shell sysctl -a | grep -q "hw.optional.arm64: 1" && echo yes || echo no)
 	ifeq ($(HAS_APPLE_SILICON),yes)
-        COMPILE_COMMAND = g++ main.cpp -o tetris.exe -L/opt/homebrew/lib -I/opt/homebrew/include -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL
+        COMPILE_COMMAND = g++ main.cpp -o tetris.exe -static -L/opt/homebrew/lib -I/opt/homebrew/include -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL
     else
-        COMPILE_COMMAND = g++ main.cpp -o tetris.exe -L/usr/local/lib -I/usr/local/include -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL
+        COMPILE_COMMAND = g++ main.cpp -o tetris.exe -static -L/usr/local/lib -I/usr/local/include -lraylib -framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL
     endif
 endif
 
